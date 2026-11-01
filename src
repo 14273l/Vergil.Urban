@@ -1,3 +1,9 @@
+local ALLOWED_ID = 84448037861644
+if game.PlaceId ~= ALLOWED_ID and game.GameId ~= ALLOWED_ID then
+    warn(string.format("[Vergil ReBorn] Blocked: PlaceId=%s GameId=%s", tostring(game.PlaceId), tostring(game.GameId)))
+    while true do task.wait(1) end
+end
+
 local VLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/14273l/Vergil-poopy/refs/heads/main/Library"))()
 
 local Window = VLib:Window({ Name = 'Vergil ReBorn' })
@@ -853,7 +859,6 @@ end)()
 local Rain = (function()
     local RunService = game:GetService("RunService")
 
-    -- Clean up any previous instance from an earlier execution
     for _, obj in ipairs(workspace:GetChildren()) do
         if obj.Name == "VergilRainPart" then obj:Destroy() end
     end
@@ -861,13 +866,13 @@ local Rain = (function()
     local Config = {
         Enabled          = false,
         Rate             = 50,
-        Lifetime         = 2.5,                     -- mid of 2-3 (original range)
+        Lifetime         = 2.5,
         Speed            = 0,
         Size             = 1,
         Color            = Color3.fromRGB(30, 184, 255),
         HeightFromCamera = 75,
         AreaSize         = 75,
-        AccelY           = -30,                     -- negative so it actually falls
+        AccelY           = -30,
         Texture          = "rbxassetid://7216855914",
         LockedToPart     = false,
         LightEmission    = 1,
