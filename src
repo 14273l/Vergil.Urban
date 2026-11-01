@@ -1,0 +1,1238 @@
+local VLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/14273l/Vergil-poopy/refs/heads/main/Library"))()
+
+local Window = VLib:Window({ Name = 'Vergil ReBorn' })
+Window:Watermark({ Name = "Vergil ReBorn" })
+Window:KeybindList({ Name = 'hotkeys' })
+
+local SA_Players = game:GetService("Players")
+local SA_Run     = game:GetService("RunService")
+local SA_RS      = game:GetService("ReplicatedStorage")
+local SA_UIS     = game:GetService("UserInputService")
+local SA_Gui     = game:GetService("GuiService")
+local SA_LP      = SA_Players.LocalPlayer
+local SA_Camera  = workspace.CurrentCamera
+local SA_VIM     = game:GetService("VirtualInputManager")
+
+local ModelChangerHooks = {
+    chamsEnabled = false,
+    applyChams   = function(_container) end,
+    resetChams   = function(_container) end,
+}
+_G.chamsEnabled  = ModelChangerHooks.chamsEnabled
+_G.applyChams    = ModelChangerHooks.applyChams
+_G.resetChams    = ModelChangerHooks.resetChams
+
+local ModelChanger = {}
+do
+    local enabled = false
+    local connections = {}
+    local renderConn = nil
+    local maintenanceConn = nil
+    local hiddenParts = {}
+    local equipDebounce = false
+
+    local MODELS = {
+        { name = "Tung Tung Sahur", id = 138151705692565, scale = 1.3 },
+        { name = "Minion", id = 164495503, scale = 1.0 },
+    }
+
+    local selectedModelIndex = 1
+    local currentModelName = MODELS[1].name
+
+    local TAG = "ModelChanger_" .. tostring(os.time())
+    local HIDE_TAG = "HiddenPart_" .. tostring(os.time())
+
+    local function getSelected()
+        return MODELS[selectedModelIndex]
+    end
+
+    local function getAnchor(character)
+        if not character then return nil end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.RootPart then return humanoid.RootPart end
+        local root = character:FindFirstChild("HumanoidRootPart")
+        if root then return root end
+        local primary = character.PrimaryPart
+        if primary then return primary end
+        local upper = character:FindFirstChild("UpperTorso")
+        if upper then return upper end
+        local torso = character:FindFirstChild("Torso")
+        if torso then return torso end
+        local head = character:FindFirstChild("Head")
+        if head then return head end
+        return nil
+    end
+
+    local function loadAsset(id)
+        local ok, result = pcall(function()
+            return InsertService:LoadAsset(id)
+        end)
+        if ok and result then return result end
+
+        if typeof(game.GetObjects) == "function" then
+            local ok2, objs = pcall(function()
+                return game:GetObjects("rbxassetid://" .. id)
+            end)
+            if ok2 and objs and #objs > 0 then
+                local model = Instance.new("Model")
+                for _, o in ipairs(objs) do o.Parent = model end
+                return model
+            end
+        end
+
+        if typeof(game.HttpGet) == "function" then
+            local ok3, xml = pcall(function()
+                return game:HttpGet("https://assetdelivery.roblox.com/v1/asset/?id=" .. id)
+            end)
+            if ok3 and type(xml) == "string" and #xml > 0 then
+                local ok4, model = pcall(function()
+                    return InsertService:Insert(xml)
+                end)
+                if ok4 and model then return model end
+            end
+        end
+
+        return nil
+    end
+
+    local function clearOld(character)
+        if character then
+            for _, d in ipairs(character:GetDescendants()) do
+                if d:GetAttribute(TAG) then d:Destroy() end
+            end
+        end
+        for _, d in ipairs(workspace:GetChildren()) do
+            if d:GetAttribute(TAG) then d:Destroy() end
+        end
+    end
+
+    local function shouldSkip(inst)
+        local cur = inst
+        while cur and cur ~= game do
+            if cur:GetAttribute(TAG) then return true end
+            if cur:IsA("Tool") then return true end
+            cur = cur.Parent
+        end
+        return false
+    end
+
+    local function hideOne(inst)
+        if shouldSkip(inst) then return end
+
+        if inst:IsA("BasePart") then
+            if hiddenParts[inst] == nil then
+                hiddenParts[inst] = inst.Transparency
+            end
+            inst.Transparency = 1
+            inst:SetAttribute(HIDE_TAG, true)
+            for _, child in ipairs(inst:GetChildren()) do
+                if (child:IsA("Decal") or child:IsA("Texture")) and not shouldSkip(child) then
+                    if hiddenParts[child] == nil then
+                        hiddenParts[child] = child.Transparency
+                    end
+                    child.Transparency = 1
+                    child:SetAttribute(HIDE_TAG, true)
+                end
+            end
+        elseif inst:IsA("Decal") or inst:IsA("Texture") then
+            if hiddenParts[inst] == nil then
+                hiddenParts[inst] = inst.Transparency
+            end
+            inst.Transparency = 1
+            inst:SetAttribute(HIDE_TAG, true)
+        elseif inst:IsA("Accessory") or inst:IsA("Hat") then
+            for _, p in ipairs(inst:GetDescendants()) do
+                if not shouldSkip(p) and (p:IsA("BasePart") or p:IsA("Decal") or p:IsA("Texture")) then
+                    if hiddenParts[p] == nil then
+                        hiddenParts[p] = p.Transparency
+                    end
+                    p.Transparency = 1
+                    p:SetAttribute(HIDE_TAG, true)
+                end
+            end
+        end
+    end
+
+    local function hideAvatar(character)
+        for _, d in ipairs(character:GetDescendants()) do
+            hideOne(d)
+        end
+        local conn = character.DescendantAdded:Connect(function(d)
+            task.wait(0.05)
+            if enabled then hideOne(d) end
+        end)
+        table.insert(connections, conn)
+    end
+
+    local function rehideAvatar(character)
+        for _, d in ipairs(character:GetDescendants()) do
+            if not shouldSkip(d) then
+                if d:IsA("BasePart") and d.Transparency ~= 1 then
+                    hideOne(d)
+                elseif (d:IsA("Decal") or d:IsA("Texture")) and d.Transparency ~= 1 then
+                    hideOne(d)
+                end
+            end
+        end
+    end
+
+    local function restoreAvatar()
+        for part, original in pairs(hiddenParts) do
+            if part and part.Parent then
+                pcall(function() part.Transparency = original end)
+            end
+        end
+        hiddenParts = {}
+    end
+
+    local function scaleModel(parts, factor)
+        if factor == 1 then return end
+        local minV, maxV = nil, nil
+        for _, p in ipairs(parts) do
+            local cf, size = p.CFrame, p.Size
+            local corners = {
+                cf * Vector3.new(-size.X/2, -size.Y/2, -size.Z/2),
+                cf * Vector3.new( size.X/2, -size.Y/2, -size.Z/2),
+                cf * Vector3.new(-size.X/2,  size.Y/2, -size.Z/2),
+                cf * Vector3.new( size.X/2,  size.Y/2, -size.Z/2),
+                cf * Vector3.new(-size.X/2, -size.Y/2,  size.Z/2),
+                cf * Vector3.new( size.X/2, -size.Y/2,  size.Z/2),
+                cf * Vector3.new(-size.X/2,  size.Y/2,  size.Z/2),
+                cf * Vector3.new( size.X/2,  size.Y/2,  size.Z/2),
+            }
+            for _, c in ipairs(corners) do
+                minV = minV and Vector3.new(math.min(minV.X,c.X), math.min(minV.Y,c.Y), math.min(minV.Z,c.Z)) or c
+                maxV = maxV and Vector3.new(math.max(maxV.X,c.X), math.max(maxV.Y,c.Y), math.max(maxV.Z,c.Z)) or c
+            end
+        end
+        local center = (minV + maxV) / 2
+        for _, p in ipairs(parts) do
+            p.Size = p.Size * factor
+            local offsetFromCenter = p.Position - center
+            p.Position = center + offsetFromCenter * factor
+        end
+    end
+
+    local function equip(character)
+        if equipDebounce then return end
+        equipDebounce = true
+
+        local humanoid = character:WaitForChild("Humanoid", 10)
+        if not humanoid then equipDebounce = false; return end
+        local root = getAnchor(character)
+        if not root then equipDebounce = false; return end
+
+        task.wait(0.3)
+        if not enabled then equipDebounce = false; return end
+        if humanoid.Health <= 0 then equipDebounce = false; return end
+
+        clearOld(character)
+        hideAvatar(character)
+
+        local modelData = getSelected()
+        local asset = loadAsset(modelData.id)
+        if not asset then
+            warn("[ModelChanger] Failed to load asset " .. modelData.id)
+            equipDebounce = false
+            return
+        end
+
+        asset:SetAttribute(TAG, true)
+        for _, d in ipairs(asset:GetDescendants()) do
+            d:SetAttribute(TAG, true)
+        end
+
+        local parts = {}
+        local accessory = asset:FindFirstChildWhichIsA("Accessory", true)
+        if accessory then
+            local handle = accessory:FindFirstChild("Handle")
+            if handle then table.insert(parts, handle) end
+        else
+            for _, d in ipairs(asset:GetDescendants()) do
+                if d:IsA("BasePart") then table.insert(parts, d) end
+            end
+        end
+
+        if #parts == 0 then
+            warn("[ModelChanger] Asset contains no parts.")
+            asset:Destroy()
+            equipDebounce = false
+            return
+        end
+
+        for _, p in ipairs(parts) do
+            p.Anchored = true
+            p.CanCollide = false
+            p.CanQuery = false
+            p.CanTouch = false
+            p.Massless = true
+        end
+
+        scaleModel(parts, modelData.scale)
+
+        local container = Instance.new("Model")
+        container.Name = "Free9entsModelChanger"
+        container:SetAttribute(TAG, true)
+        container.Parent = workspace
+
+        for _, p in ipairs(parts) do
+            p.Parent = container
+        end
+
+        container:PivotTo(root.CFrame)
+        ModelChanger._container = container
+
+        if _G.chamsEnabled then _G.applyChams(container) end
+
+        if renderConn then renderConn:Disconnect() end
+        renderConn = SA_Run.RenderStepped:Connect(function()
+            if not enabled then return end
+            local currentChar = SA_LP.Character
+            local currentRoot = currentChar and getAnchor(currentChar)
+            if not currentChar or not currentRoot or not container.Parent then
+                if renderConn then renderConn:Disconnect() renderConn = nil end
+                if container then container:Destroy() end
+                if ModelChanger._container == container then ModelChanger._container = nil end
+                return
+            end
+            local currentHumanoid = currentChar:FindFirstChildOfClass("Humanoid")
+            if not currentHumanoid or currentHumanoid.Health <= 0 then
+                if renderConn then renderConn:Disconnect() renderConn = nil end
+                if container then container:Destroy() end
+                if ModelChanger._container == container then ModelChanger._container = nil end
+                return
+            end
+            container:PivotTo(currentRoot.CFrame)
+        end)
+
+        local diedConn = humanoid.Died:Connect(function()
+            if renderConn then renderConn:Disconnect() renderConn = nil end
+            if container then container:Destroy() end
+            if ModelChanger._container == container then ModelChanger._container = nil end
+        end)
+        table.insert(connections, diedConn)
+
+        asset:Destroy()
+        print("[ModelChanger] Attached " .. modelData.name .. " (" .. #parts .. " parts, scale " .. modelData.scale .. ").")
+        equipDebounce = false
+    end
+
+    local function onCharacterAdded(character)
+        if not enabled then return end
+        task.wait(0.5)
+        if enabled then equip(character) end
+    end
+
+    local function startMaintenance()
+        if maintenanceConn then return end
+        maintenanceConn = SA_Run.Heartbeat:Connect(function()
+            if not enabled then return end
+            local char = SA_LP.Character
+            if not char then return end
+            local humanoid = char:FindFirstChildOfClass("Humanoid")
+            if not humanoid or humanoid.Health <= 0 then return end
+
+            rehideAvatar(char)
+
+            if not ModelChanger._container or not ModelChanger._container.Parent then
+                if not equipDebounce then
+                    task.spawn(equip, char)
+                end
+            end
+        end)
+    end
+
+    ModelChanger.start = function()
+        if enabled then return end
+        enabled = true
+        if SA_LP.Character then
+            task.spawn(equip, SA_LP.Character)
+        end
+        local conn = SA_LP.CharacterAdded:Connect(onCharacterAdded)
+        table.insert(connections, conn)
+        startMaintenance()
+        print("[ModelChanger] Loaded.")
+    end
+
+    ModelChanger.stop = function()
+        if not enabled then return end
+        enabled = false
+        if renderConn then renderConn:Disconnect() renderConn = nil end
+        if maintenanceConn then maintenanceConn:Disconnect() maintenanceConn = nil end
+        if ModelChanger._container then
+            _G.resetChams(ModelChanger._container)
+            ModelChanger._container:Destroy()
+            ModelChanger._container = nil
+        end
+        for _, d in ipairs(workspace:GetChildren()) do
+            if d:GetAttribute(TAG) then d:Destroy() end
+        end
+        if SA_LP.Character then
+            clearOld(SA_LP.Character)
+            restoreAvatar()
+        end
+        for _, conn in ipairs(connections) do conn:Disconnect() end
+        connections = {}
+    end
+
+    ModelChanger.setModel = function(name)
+        for i, m in ipairs(MODELS) do
+            if m.name == name then
+                selectedModelIndex = i
+                currentModelName = m.name
+                break
+            end
+        end
+        if enabled and SA_LP.Character then
+            task.spawn(function() equip(SA_LP.Character) end)
+        end
+    end
+
+    ModelChanger.getModelNames = function()
+        local names = {}
+        for _, m in ipairs(MODELS) do table.insert(names, m.name) end
+        return names
+    end
+
+    ModelChanger.setScale = function(name, scale)
+        for _, m in ipairs(MODELS) do
+            if m.name == name then
+                m.scale = scale
+                if currentModelName == name and enabled and SA_LP.Character then
+                    task.spawn(function() equip(SA_LP.Character) end)
+                end
+                return
+            end
+        end
+    end
+
+    ModelChanger.getScale = function(name)
+        for _, m in ipairs(MODELS) do
+            if m.name == name then return m.scale end
+        end
+        return 1
+    end
+end
+
+local SilentAim = {
+    Enabled     = false,
+    FOV         = 250,
+    TargetPart  = "Head",
+    VisibleOnly = true,
+    ShowCircle  = true,
+}
+
+local SA_State = { Fire = nil, Circle = nil, Hooked = false }
+
+local SA_Ray = RaycastParams.new()
+SA_Ray.FilterType     = Enum.RaycastFilterType.Exclude
+SA_Ray.IgnoreWater    = true
+SA_Ray.CollisionGroup = "Bullet"
+
+local function SA_Exclude()
+    local t = { SA_Camera }
+    if SA_LP.Character then table.insert(t, SA_LP.Character) end
+    for _, n in { "FX", "ClientHitboxes" } do
+        local i = workspace:FindFirstChild(n)
+        if i then table.insert(t, i) end
+    end
+    return t
+end
+
+local function SA_Visible(from, to)
+    SA_Ray.FilterDescendantsInstances = SA_Exclude()
+    local dir = to - from
+    local hit = workspace:Raycast(from, dir, SA_Ray)
+    if not hit then return true end
+    return (hit.Position - from).Magnitude >= dir.Magnitude - 1
+end
+
+local function SA_Target()
+    local best, bestDist = nil, SilentAim.FOV
+    local center = SA_Camera.ViewportSize / 2
+    local camPos = SA_Camera.CFrame.Position
+    for _, player in SA_Players:GetPlayers() do
+        if player == SA_LP then continue end
+        local char = player.Character
+        if not char then continue end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then continue end
+        local part = char:FindFirstChild(SilentAim.TargetPart)
+        if not part then continue end
+        local sp, onScreen = SA_Camera:WorldToViewportPoint(part.Position)
+        if not onScreen or sp.Z <= 0 then continue end
+        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+        if d >= bestDist then continue end
+        if SilentAim.VisibleOnly and not SA_Visible(camPos, part.Position) then continue end
+        bestDist = d
+        best = { char = char, pos = part.Position, player = player }
+    end
+    return best
+end
+
+local function SA_ProcessArgs(args, tgt)
+    if not tgt then return end
+    if typeof(args[1]) == "Vector3" then
+        args[2] = (tgt.pos - args[1]).Unit
+    end
+    if typeof(args[11]) == "Vector3" and typeof(args[12]) == "Vector3" then
+        args[12] = (tgt.pos - args[11]).Unit
+    end
+    if typeof(args[13]) == "Vector3" then
+        args[13] = tgt.pos
+    end
+    if type(args[3]) ~= "string" then
+        args[3] = tgt.char
+        args[4] = SilentAim.TargetPart
+        args[5] = tgt.pos
+    end
+end
+
+local function SA_MakeCircle()
+    if SA_State.Circle then return end
+    if not Drawing or not Drawing.new then return end
+    local ok, circle = pcall(function() return Drawing.new("Circle") end)
+    if not ok or not circle then return end
+    circle.Color        = Color3.new(1, 1, 1)
+    circle.Thickness    = 1.5
+    circle.NumSides     = 64
+    circle.Filled       = false
+    circle.Transparency = 0.85
+    circle.Visible      = false
+    SA_State.Circle = circle
+end
+
+local function SA_InstallHook()
+    if SA_State.Hooked then return end
+    task.spawn(function()
+        local remotes = SA_RS:WaitForChild("Remotes", 15)
+        if not remotes then warn("[SA] Remotes not found"); return end
+        local fire = remotes:WaitForChild("Fire", 15)
+        if not fire then warn("[SA] Fire not found"); return end
+        SA_State.Fire = fire
+
+        local oldFire
+        local ok, err = pcall(function()
+            oldFire = hookfunction(fire.FireServer, function(self, ...)
+                if not rawequal(self, SA_State.Fire) then
+                    return oldFire(self, ...)
+                end
+                if not SilentAim.Enabled then
+                    return oldFire(self, ...)
+                end
+                local args = { ... }
+                local tgt  = SA_Target()
+                if not tgt then
+                    return oldFire(self, table.unpack(args))
+                end
+                SA_ProcessArgs(args, tgt)
+                return oldFire(self, table.unpack(args))
+            end)
+        end)
+        if ok then SA_State.Hooked = true
+        else warn("[SA] hookfunction failed: " .. tostring(err)) end
+    end)
+end
+
+task.spawn(function()
+    SA_MakeCircle()
+    SA_Run.RenderStepped:Connect(function()
+        local c = SA_State.Circle
+        if not c then SA_MakeCircle(); c = SA_State.Circle; if not c then return end end
+        local show = SilentAim.Enabled and SilentAim.ShowCircle
+        c.Visible = show
+        if show then
+            c.Position = SA_UIS:GetMouseLocation()
+            c.Radius   = SilentAim.FOV
+        end
+    end)
+end)
+
+local CombatMods = {
+    TriggerBot = false,
+    NoRecoil   = false,
+    NoSpread   = false,
+}
+
+local CM = {
+    Config             = nil,
+    ClientState        = nil,
+    OriginalRecoilKey  = nil,
+    OriginalRecoilFn   = nil,
+    OriginalBloomScale = nil,
+}
+
+local CM_Target    = nil
+local CM_FirePressed = false
+
+local function CM_Resolve()
+    local weapons = SA_RS:FindFirstChild("Weapons")
+    if not weapons then return end
+    if not CM.Config and weapons:FindFirstChild("Config") then
+        local ok, cfg = pcall(require, weapons.Config)
+        if ok then
+            CM.Config = cfg
+            CM.OriginalBloomScale = cfg.Global.BloomScale
+        end
+    end
+    if not CM.ClientState and weapons:FindFirstChild("ClientState") then
+        local ok, cs = pcall(require, weapons.ClientState)
+        if ok then CM.ClientState = cs end
+    end
+end
+
+task.spawn(CM_Resolve)
+task.delay(2, CM_Resolve)
+task.delay(5, CM_Resolve)
+
+local function CM_ApplyNoRecoil(enabled)
+    if not CM.ClientState then CM_Resolve() end
+    local cs = CM.ClientState
+    if not cs then return end
+    local key = cs.RecoilKey()
+    if not key then return end
+    if enabled then
+        if not CM.OriginalRecoilFn then
+            CM.OriginalRecoilKey = key
+            CM.OriginalRecoilFn  = cs[key]
+        end
+        cs[key] = function() end
+    else
+        if CM.OriginalRecoilKey and CM.OriginalRecoilFn then
+            cs[CM.OriginalRecoilKey] = CM.OriginalRecoilFn
+        end
+    end
+end
+
+local function CM_ApplyNoSpread(enabled)
+    if not CM.Config then CM_Resolve() end
+    if not CM.Config then return end
+    if enabled then
+        CM.Config.Global.BloomScale = 0
+    else
+        CM.Config.Global.BloomScale = CM_OriginalBloomScale or 1
+    end
+end
+
+local function CM_GetEquippedTool()
+    local char = SA_LP.Character
+    if not char then return nil end
+    local tool = char:FindFirstChildOfClass("Tool")
+    if not tool or not tool:GetAttribute("Weapon") then return nil end
+    return tool
+end
+
+local function CM_PressFire()
+    if CM_FirePressed then return end
+    CM_FirePressed = true
+    local pos = SA_Camera.ViewportSize / 2
+    pcall(function()
+        SA_VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, true, game, 0)
+    end)
+end
+
+local function CM_ReleaseFire()
+    if not CM_FirePressed then return end
+    CM_FirePressed = false
+    local pos = SA_Camera.ViewportSize / 2
+    pcall(function()
+        SA_VIM:SendMouseButtonEvent(pos.X, pos.Y, 0, false, game, 0)
+    end)
+end
+
+SA_Run.RenderStepped:Connect(function()
+    if CombatMods.TriggerBot then
+        CM_Target = SA_Target()
+    else
+        CM_Target = nil
+    end
+end)
+
+SA_Run.RenderStepped:Connect(function()
+    if not CombatMods.TriggerBot then
+        CM_ReleaseFire()
+        return
+    end
+    if not SA_LP.Character then
+        CM_ReleaseFire()
+        return
+    end
+    local tool = CM_GetEquippedTool()
+    if not tool then
+        CM_ReleaseFire()
+        return
+    end
+    if not CM_Target then
+        CM_ReleaseFire()
+        return
+    end
+    CM_PressFire()
+end)
+
+SA_Gui.MenuOpened:Connect(CM_ReleaseFire)
+SA_UIS.WindowFocusReleased:Connect(CM_ReleaseFire)
+
+local Chams = (function()
+    local RunService = game:GetService("RunService")
+    local Players    = game:GetService("Players")
+    local LP = Players.LocalPlayer
+
+    local Config = {
+        Enabled      = false,
+        VisibleColor = Color3.fromRGB(185, 218, 255),
+        Transparency = 0.5,
+    }
+    local Cache  = {}
+    local Ignore = { ["HumanoidRootPart"] = true }
+
+    local function Build(part)
+        local adorn = Instance.new("BoxHandleAdornment")
+        adorn.Size = part.Name == "Head"
+            and (Vector3.new(1, 1, 1) + Vector3.new(0.2, 0.2, 0.2))
+            or (part.Size + Vector3.new(0.05, 0.05, 0.05))
+        adorn.Adornee      = part
+        adorn.Parent       = part
+        adorn.ZIndex       = 2
+        adorn.AlwaysOnTop  = true
+        adorn.Visible      = false
+        adorn.Color3       = Config.VisibleColor
+        adorn.Transparency = Config.Transparency
+        return adorn
+    end
+
+    local function Apply(player)
+        if player == LP or not player.Character then return end
+        for _, part in ipairs(player.Character:GetChildren()) do
+            if part:IsA("BasePart") and not Ignore[part.Name] then
+                if not Cache[part] then Cache[part] = Build(part) end
+                local ad = Cache[part]
+                ad.Visible      = Config.Enabled
+                ad.Color3       = Config.VisibleColor
+                ad.Transparency = Config.Transparency
+            end
+        end
+    end
+
+    local function UpdateAll()
+        for _, p in ipairs(Players:GetPlayers()) do Apply(p) end
+    end
+
+    Players.PlayerAdded:Connect(function(p)
+        p.CharacterAdded:Connect(function()
+            task.wait(0.1); Apply(p)
+        end)
+        Apply(p)
+    end)
+    for _, p in ipairs(Players:GetPlayers()) do
+        p.CharacterAdded:Connect(function()
+            task.wait(0.1); Apply(p)
+        end)
+        Apply(p)
+    end
+
+    RunService.RenderStepped:Connect(UpdateAll)
+    return Config
+end)()
+
+local FOVLock = (function()
+    local Camera     = workspace.CurrentCamera
+    local RunService = game:GetService("RunService")
+    local State = { Enabled = false, Value = 90 }
+    local function Apply()
+        local cam = workspace.CurrentCamera
+        if cam and State.Enabled and cam.FieldOfView ~= State.Value then
+            cam.FieldOfView = State.Value
+        end
+    end
+    RunService.RenderStepped:Connect(Apply)
+    local function Bind(cam)
+        if cam then cam:GetPropertyChangedSignal("FieldOfView"):Connect(Apply) end
+    end
+    Bind(Camera)
+    workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+        Bind(workspace.CurrentCamera)
+    end)
+    return State
+end)()
+
+local Ambient = (function()
+    local Lighting = game:GetService("Lighting")
+
+    local Config = {
+        Enabled        = false,
+        Ambient        = Color3.fromRGB(80, 80, 80),
+        OutdoorAmbient = Color3.fromRGB(128, 128, 128),
+        Brightness     = 2,
+        ClockTime      = 14,
+        FogStart       = 0,
+        FogEnd         = 1000,
+        FogColor       = Color3.fromRGB(192, 192, 192),
+        AtmosEnabled   = false,
+        AtmosDensity   = 0.3,
+        AtmosOffset    = 0,
+        AtmosGlare     = 0,
+        AtmosHaze      = 0,
+        AtmosColor     = Color3.fromRGB(199, 199, 199),
+        AtmosDecay     = Color3.fromRGB(106, 112, 125),
+    }
+
+    local Original     = {}
+    local Atmos        = nil
+    local CreatedAtmos = false
+
+    local function SaveOriginal()
+        if Original.Saved then return end
+        Original.Ambient        = Lighting.Ambient
+        Original.OutdoorAmbient = Lighting.OutdoorAmbient
+        Original.Brightness     = Lighting.Brightness
+        Original.ClockTime      = Lighting.ClockTime
+        Original.FogStart       = Lighting.FogStart
+        Original.FogEnd         = Lighting.FogEnd
+        Original.FogColor       = Lighting.FogColor
+        Original.Saved          = true
+    end
+
+    local function GetAtmos()
+        if Atmos and Atmos.Parent then return Atmos end
+        for _, child in ipairs(Lighting:GetChildren()) do
+            if child:IsA("Atmosphere") then
+                Atmos = child
+                return Atmos
+            end
+        end
+        Atmos = Instance.new("Atmosphere")
+        Atmos.Parent = Lighting
+        CreatedAtmos = true
+        return Atmos
+    end
+
+    function Config.Apply()
+        if not Config.Enabled then return end
+        SaveOriginal()
+        Lighting.Ambient        = Config.Ambient
+        Lighting.OutdoorAmbient = Config.OutdoorAmbient
+        Lighting.Brightness     = Config.Brightness
+        Lighting.ClockTime      = Config.ClockTime
+        Lighting.FogStart       = Config.FogStart
+        Lighting.FogEnd         = Config.FogEnd
+        Lighting.FogColor       = Config.FogColor
+    end
+
+    function Config.Restore()
+        if not Original.Saved then return end
+        Lighting.Ambient        = Original.Ambient
+        Lighting.OutdoorAmbient = Original.OutdoorAmbient
+        Lighting.Brightness     = Original.Brightness
+        Lighting.ClockTime      = Original.ClockTime
+        Lighting.FogStart       = Original.FogStart
+        Lighting.FogEnd         = Original.FogEnd
+        Lighting.FogColor       = Original.FogColor
+    end
+
+    function Config.ApplyAtmos()
+        if not Config.AtmosEnabled then
+            if CreatedAtmos and Atmos and Atmos.Parent then
+                Atmos:Destroy()
+                Atmos = nil
+                CreatedAtmos = false
+            end
+            return
+        end
+        local a = GetAtmos()
+        a.Density = Config.AtmosDensity
+        a.Offset  = Config.AtmosOffset
+        a.Glare   = Config.AtmosGlare
+        a.Haze    = Config.AtmosHaze
+        a.Color   = Config.AtmosColor
+        a.Decay   = Config.AtmosDecay
+    end
+
+    return Config
+end)()
+
+local Rain = (function()
+    local RunService = game:GetService("RunService")
+
+    -- Clean up any previous instance from an earlier execution
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if obj.Name == "VergilRainPart" then obj:Destroy() end
+    end
+
+    local Config = {
+        Enabled          = false,
+        Rate             = 50,
+        Lifetime         = 2.5,                     -- mid of 2-3 (original range)
+        Speed            = 0,
+        Size             = 1,
+        Color            = Color3.fromRGB(30, 184, 255),
+        HeightFromCamera = 75,
+        AreaSize         = 75,
+        AccelY           = -30,                     -- negative so it actually falls
+        Texture          = "rbxassetid://7216855914",
+        LockedToPart     = false,
+        LightEmission    = 1,
+        LightInfluence   = 0,
+        Drag             = 0,
+    }
+
+    local Part, Emitter, HBConn
+
+    local function UpdateEmitter()
+        if not Emitter then return end
+        Emitter.Enabled         = Config.Enabled
+        Emitter.Texture         = Config.Texture
+        Emitter.Size            = NumberSequence.new(Config.Size)
+        Emitter.Orientation     = Enum.ParticleOrientation.VelocityParallel
+        Emitter.Color           = ColorSequence.new(Config.Color, Config.Color)
+        Emitter.LightEmission   = Config.LightEmission
+        Emitter.LightInfluence  = Config.LightInfluence
+        Emitter.Squash          = NumberSequence.new(0)
+        Emitter.Transparency    = NumberSequence.new(0)
+        Emitter.Lifetime        = NumberRange.new(Config.Lifetime * 0.8, Config.Lifetime * 1.2)
+        Emitter.Rate            = Config.Rate
+        Emitter.Rotation        = NumberRange.new(90, 90)
+        Emitter.RotSpeed        = NumberRange.new(0, 0)
+        Emitter.Speed           = NumberRange.new(Config.Speed, Config.Speed)
+        Emitter.Acceleration    = Vector3.new(0, Config.AccelY, 0)
+        Emitter.Drag            = Config.Drag
+        Emitter.LockedToPart    = Config.LockedToPart
+        if Part then
+            Part.Size = Vector3.new(Config.AreaSize, 0.01, Config.AreaSize)
+        end
+    end
+
+    local function Create()
+        if Part and Part.Parent then return end
+        if Part then Part:Destroy(); Part = nil end
+        Emitter = nil
+
+        Part = Instance.new("Part")
+        Part.Name         = "VergilRainPart"
+        Part.Anchored     = true
+        Part.CanCollide   = false
+        Part.CanQuery     = false
+        Part.CanTouch     = false
+        Part.CastShadow   = false
+        Part.Transparency = 1
+        Part.Size         = Vector3.new(Config.AreaSize, 0.01, Config.AreaSize)
+        Part.Parent       = workspace
+
+        Emitter = Instance.new("ParticleEmitter")
+        Emitter.Parent = Part
+
+        local cam = workspace.CurrentCamera
+        if cam then
+            Part.Position = cam.CFrame.Position + Vector3.new(0, Config.HeightFromCamera, 0)
+        end
+
+        UpdateEmitter()
+
+        if HBConn then HBConn:Disconnect() end
+        HBConn = RunService.Heartbeat:Connect(function()
+            if not Config.Enabled then return end
+            if not Part or not Part.Parent then return end
+            local c = workspace.CurrentCamera
+            if c then
+                Part.Position = c.CFrame.Position + Vector3.new(0, Config.HeightFromCamera, 0)
+            end
+        end)
+    end
+
+    local function Destroy()
+        if HBConn then HBConn:Disconnect(); HBConn = nil end
+        if Part then Part:Destroy(); Part = nil end
+        Emitter = nil
+    end
+
+    function Config.Start() Create() end
+    function Config.Stop()  Destroy() end
+    function Config.Update()
+        if Config.Enabled then
+            if not Part or not Part.Parent then Create() end
+            UpdateEmitter()
+        else
+            Destroy()
+        end
+    end
+
+    return Config
+end)()
+
+local Combat  = Window:Page({ Name = "combat" })
+local Visuals = Window:Page({ Name = "visuals" })
+local Misc    = Window:Page({ Name = "misc" })
+
+local Aim = Combat:Section({ Name = "silent aim", Side = 1 })
+
+Aim:Toggle({
+    Name = "enabled", Flag = "sa_enabled", Default = false,
+    Callback = function(v)
+        SilentAim.Enabled = v
+        if v then SA_MakeCircle(); SA_InstallHook() end
+    end,
+})
+
+Aim:Slider({
+    Name = "fov", Flag = "sa_fov", Min = 0, Max = 1000, Default = 250, Decimals = 0,
+    Callback = function(v) SilentAim.FOV = v end,
+})
+
+Aim:Dropdown({
+    Name = "target part", Flag = "sa_part",
+    Items = { "Head", "UpperTorso", "HumanoidRootPart", "LowerTorso" },
+    Default = "Head",
+    Callback = function(v) SilentAim.TargetPart = v end,
+})
+
+Aim:Toggle({
+    Name = "visible only", Flag = "sa_visible", Default = true,
+    Callback = function(v) SilentAim.VisibleOnly = v end,
+})
+
+Aim:Toggle({
+    Name = "show fov circle", Flag = "sa_circle", Default = true,
+    Callback = function(v) SilentAim.ShowCircle = v end,
+})
+
+local Mods = Combat:Section({ Name = "combat mods", Side = 2 })
+
+Mods:Toggle({
+    Name = "trigger bot", Flag = "cm_trigger", Default = false,
+    Callback = function(v)
+        CombatMods.TriggerBot = v
+        if not v then CM_ReleaseFire() end
+    end,
+})
+
+Mods:Toggle({
+    Name = "no recoil", Flag = "cm_norecoil", Default = false,
+    Callback = function(v)
+        CombatMods.NoRecoil = v
+        if v then CM_Resolve() end
+        CM_ApplyNoRecoil(v)
+    end,
+})
+
+Mods:Toggle({
+    Name = "no spread", Flag = "cm_nospread", Default = false,
+    Callback = function(v)
+        CombatMods.NoSpread = v
+        if v then CM_Resolve() end
+        CM_ApplyNoSpread(v)
+    end,
+})
+
+local ChamsSection = Visuals:Section({ Name = "chams", Side = 1 })
+
+ChamsSection:Toggle({
+    Name = "enabled", Flag = "chams_enabled", Default = false,
+    Callback = function(v) Chams.Enabled = v end,
+})
+
+ChamsSection:Label({ Name = "color" }):Colorpicker({
+    Name = "color", Flag = "chams_color", Default = Color3.fromRGB(185, 218, 255),
+    Callback = function(c) Chams.VisibleColor = c end,
+})
+
+ChamsSection:Slider({
+    Name = "transparency", Flag = "chams_trans", Min = 0, Max = 1, Default = 0.5, Decimals = 0.01,
+    Callback = function(v) Chams.Transparency = v end,
+})
+
+local RainSection = Visuals:Section({ Name = "rain / particles", Side = 1 })
+
+RainSection:Toggle({
+    Name = "enabled", Flag = "rain_enabled", Default = false,
+    Callback = function(v) Rain.Enabled = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "rate", Flag = "rain_rate", Min = 1, Max = 500, Default = 50, Decimals = 0,
+    Callback = function(v) Rain.Rate = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "lifetime", Flag = "rain_lifetime", Min = 0.1, Max = 10, Default = 2.5, Decimals = 0.1,
+    Callback = function(v) Rain.Lifetime = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "speed", Flag = "rain_speed", Min = 0, Max = 100, Default = 0, Decimals = 1,
+    Callback = function(v) Rain.Speed = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "size", Flag = "rain_size", Min = 0.1, Max = 5, Default = 1, Decimals = 0.05,
+    Callback = function(v) Rain.Size = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "height", Flag = "rain_height", Min = 0, Max = 500, Default = 75, Decimals = 1,
+    Callback = function(v) Rain.HeightFromCamera = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "area size", Flag = "rain_area", Min = 10, Max = 500, Default = 75, Decimals = 1,
+    Callback = function(v) Rain.AreaSize = v; Rain.Update() end,
+})
+
+RainSection:Slider({
+    Name = "accel Y", Flag = "rain_accel", Min = -200, Max = 200, Default = -30, Decimals = 1,
+    Callback = function(v) Rain.AccelY = v; Rain.Update() end,
+})
+
+RainSection:Label({ Name = "color" }):Colorpicker({
+    Name = "color", Flag = "rain_color", Default = Color3.fromRGB(30, 184, 255),
+    Callback = function(c) Rain.Color = c; Rain.Update() end,
+})
+
+local AmbientSection = Visuals:Section({ Name = "ambient / atmosphere", Side = 2 })
+
+AmbientSection:Toggle({
+    Name = "enabled", Flag = "amb_enabled", Default = false,
+    Callback = function(v)
+        Ambient.Enabled = v
+        if v then Ambient.Apply() else Ambient.Restore() end
+    end,
+})
+
+AmbientSection:Label({ Name = "ambient color" }):Colorpicker({
+    Name = "ambient color", Flag = "amb_color",
+    Default = Color3.fromRGB(80, 80, 80),
+    Callback = function(c) Ambient.Ambient = c; Ambient.Apply() end,
+})
+
+AmbientSection:Label({ Name = "outdoor ambient" }):Colorpicker({
+    Name = "outdoor ambient", Flag = "amb_outdoor",
+    Default = Color3.fromRGB(128, 128, 128),
+    Callback = function(c) Ambient.OutdoorAmbient = c; Ambient.Apply() end,
+})
+
+AmbientSection:Slider({
+    Name = "brightness", Flag = "amb_bright",
+    Min = 0, Max = 10, Default = 2, Decimals = 0.1,
+    Callback = function(v) Ambient.Brightness = v; Ambient.Apply() end,
+})
+
+AmbientSection:Slider({
+    Name = "time of day", Flag = "amb_time",
+    Min = 0, Max = 24, Default = 14, Decimals = 0.1,
+    Callback = function(v) Ambient.ClockTime = v; Ambient.Apply() end,
+})
+
+AmbientSection:Slider({
+    Name = "fog start", Flag = "amb_fogstart",
+    Min = 0, Max = 5000, Default = 0, Decimals = 1,
+    Callback = function(v) Ambient.FogStart = v; Ambient.Apply() end,
+})
+
+AmbientSection:Slider({
+    Name = "fog end", Flag = "amb_fogend",
+    Min = 0, Max = 5000, Default = 1000, Decimals = 1,
+    Callback = function(v) Ambient.FogEnd = v; Ambient.Apply() end,
+})
+
+AmbientSection:Label({ Name = "fog color" }):Colorpicker({
+    Name = "fog color", Flag = "amb_fogcolor",
+    Default = Color3.fromRGB(192, 192, 192),
+    Callback = function(c) Ambient.FogColor = c; Ambient.Apply() end,
+})
+
+AmbientSection:Toggle({
+    Name = "atmosphere", Flag = "atmos_enabled", Default = false,
+    Callback = function(v) Ambient.AtmosEnabled = v; Ambient.ApplyAtmos() end,
+})
+
+AmbientSection:Slider({
+    Name = "density", Flag = "atmos_density",
+    Min = 0, Max = 1, Default = 0.3, Decimals = 0.01,
+    Callback = function(v) Ambient.AtmosDensity = v; Ambient.ApplyAtmos() end,
+})
+
+AmbientSection:Slider({
+    Name = "offset", Flag = "atmos_offset",
+    Min = -1, Max = 1, Default = 0, Decimals = 0.01,
+    Callback = function(v) Ambient.AtmosOffset = v; Ambient.ApplyAtmos() end,
+})
+
+AmbientSection:Slider({
+    Name = "glare", Flag = "atmos_glare",
+    Min = 0, Max = 10, Default = 0, Decimals = 0.1,
+    Callback = function(v) Ambient.AtmosGlare = v; Ambient.ApplyAtmos() end,
+})
+
+AmbientSection:Slider({
+    Name = "haze", Flag = "atmos_haze",
+    Min = 0, Max = 10, Default = 0, Decimals = 0.1,
+    Callback = function(v) Ambient.AtmosHaze = v; Ambient.ApplyAtmos() end,
+})
+
+AmbientSection:Label({ Name = "atmosphere color" }):Colorpicker({
+    Name = "atmosphere color", Flag = "atmos_color",
+    Default = Color3.fromRGB(199, 199, 199),
+    Callback = function(c) Ambient.AtmosColor = c; Ambient.ApplyAtmos() end,
+})
+
+AmbientSection:Label({ Name = "atmosphere decay" }):Colorpicker({
+    Name = "atmosphere decay", Flag = "atmos_decay",
+    Default = Color3.fromRGB(106, 112, 125),
+    Callback = function(c) Ambient.AtmosDecay = c; Ambient.ApplyAtmos() end,
+})
+
+local FOVSection = Misc:Section({ Name = "camera", Side = 1 })
+
+FOVSection:Toggle({
+    Name = "fov lock", Flag = "fov_enabled", Default = false,
+    Callback = function(v) FOVLock.Enabled = v end,
+})
+
+FOVSection:Slider({
+    Name = "fov", Flag = "fov_value", Min = 1, Max = 120, Default = 90, Decimals = 0,
+    Callback = function(v)
+        FOVLock.Value = v
+        if FOVLock.Enabled then
+            local cam = workspace.CurrentCamera
+            if cam then cam.FieldOfView = v end
+        end
+    end,
+})
+
+local MCSection = Misc:Section({ Name = "model changer", Side = 2 })
+
+local mc_enabled = false
+
+MCSection:Toggle({
+    Name = "enabled", Flag = "mc_enabled", Default = false,
+    Callback = function(v)
+        mc_enabled = v
+        if v then ModelChanger.start() else ModelChanger.stop() end
+    end,
+})
+
+local mc_dropdown = MCSection:Dropdown({
+    Name = "model", Flag = "mc_model",
+    Items = ModelChanger.getModelNames(),
+    Default = "Tung Tung Sahur",
+    Callback = function(v) ModelChanger.setModel(v) end,
+})
+
+local mc_scale = MCSection:Slider({
+    Name = "scale", Flag = "mc_scale",
+    Min = 0.1, Max = 5, Default = 1.3, Decimals = 0.05,
+    Callback = function(v)
+        ModelChanger.setScale(_G.__mc_current or "Tung Tung Sahur", v)
+    end,
+})
+
+_G.__mc_current = "Tung Tung Sahur"
+if mc_dropdown and mc_dropdown.OnChanged then
+    mc_dropdown:OnChanged(function(v)
+        _G.__mc_current = v
+        local s = ModelChanger.getScale(v)
+        if mc_scale and mc_scale.Set then
+            pcall(function() mc_scale:Set(s) end)
+        end
+    end)
+end
+
+Window:InitWindow()
