@@ -426,6 +426,7 @@ local SilentAim = {
     TargetPart  = "Head",
     VisibleOnly = true,
     ShowCircle  = true,
+    HitChance   = 100,
 }
 
 local SA_State = { Fire = nil, Circle = nil, Hooked = false }
@@ -530,6 +531,11 @@ local function SA_InstallHook()
                 local tgt  = SA_Target()
                 if not tgt then
                     return oldFire(self, table.unpack(args))
+                end
+                if SilentAim.HitChance < 100 then
+                    if math.random() * 100 > SilentAim.HitChance then
+                        return oldFire(self, table.unpack(args))
+                    end
                 end
                 SA_ProcessArgs(args, tgt)
                 return oldFire(self, table.unpack(args))
@@ -963,6 +969,174 @@ local Rain = (function()
     return Config
 end)()
 
+local SpinBot = (function()
+    local RunService = game:GetService("RunService")
+    local Players    = game:GetService("Players")
+    local LP         = Players.LocalPlayer
+
+    local Config = {
+        Enabled  = false,
+        Speed    = 20,
+        Axis     = "Y",
+        Preserve = true,
+    }
+
+    local Conn = nil
+
+    local function MakeRotation(dt)
+        local r = Config.Speed * dt
+        if Config.Axis == "Y" then
+            return CFrame.Angles(0, r, 0)
+        elseif Config.Axis == "X" then
+            return CFrame.Angles(r, 0, 0)
+        elseif Config.Axis == "Z" then
+            return CFrame.Angles(0, 0, r)
+        else
+            return CFrame.Angles(r * 0.6, r, r * 0.4)
+        end
+    end
+
+    local function Step(dt)
+        if not Config.Enabled then return end
+        local char = LP.Character
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hum or hum.Health <= 0 then return end
+
+        local vel = Config.Preserve and hrp.AssemblyLinearVelocity or nil
+        hrp.CFrame = hrp.CFrame * MakeRotation(dt)
+        if vel then
+            pcall(function() hrp.AssemblyLinearVelocity = vel end)
+        end
+    end
+
+    function Config.Start()
+        if Conn then return end
+        Conn = RunService.RenderStepped:Connect(Step)
+    end
+
+    function Config.Stop()
+        if Conn then Conn:Disconnect(); Conn = nil end
+    end
+
+    return Config
+end)()
+
+local AntiAim = (function()
+    local RunService = game:GetService("RunService")
+    local Players    = game:GetService("Players")
+    local LP         = Players.LocalPlayer
+
+    local Config = {
+        Enabled  = false,
+        Mode     = "Jitter",
+        Yaw      = 90,
+        Pitch    = 0,
+        Interval = 0.05,
+        Preserve = true,
+    }
+
+    local Conn, CharConn = nil, nil
+    local baseRotation = nil
+    local elapsed, lastUpdate = 0, 0
+    local jitterSign = 1
+    local curYaw, curPitch = 0, 0
+
+    local function GetHRP()
+        local c = LP.Character
+        return c and c:FindFirstChild("HumanoidRootPart")
+    end
+
+    local function GetHumanoid()
+        local c = LP.Character
+        return c and c:FindFirstChildOfClass("Humanoid")
+    end
+
+    local function UpdateOffsets()
+        if Config.Mode == "Jitter" then
+            jitterSign = -jitterSign
+            curYaw = Config.Yaw * jitterSign
+            curPitch = 0
+        elseif Config.Mode == "Random" then
+            curYaw   = (math.random() * 2 - 1) * Config.Yaw
+            curPitch = 0
+        elseif Config.Mode == "Static" then
+            curYaw   = Config.Yaw
+            curPitch = 0
+        elseif Config.Mode == "Pitch" then
+            curYaw   = 0
+            curPitch = Config.Pitch
+        elseif Config.Mode == "Yaw+Pitch" then
+            curYaw   = (math.random() * 2 - 1) * Config.Yaw
+            curPitch = (math.random() * 2 - 1) * Config.Pitch
+        end
+    end
+
+    local function Step(dt)
+        if not Config.Enabled then return end
+        elapsed = elapsed + dt
+        if elapsed - lastUpdate >= Config.Interval then
+            lastUpdate = elapsed
+            UpdateOffsets()
+        end
+
+        local hrp = GetHRP()
+        if not hrp then return end
+        local hum = GetHumanoid()
+        if not hum or hum.Health <= 0 then return end
+
+        if not baseRotation then
+            baseRotation = hrp.CFrame.Rotation
+        end
+
+        local aaOffset = CFrame.Angles(math.rad(curPitch), math.rad(curYaw), 0)
+        local vel = Config.Preserve and hrp.AssemblyLinearVelocity or nil
+
+        hrp.CFrame = CFrame.new(hrp.Position) * baseRotation * aaOffset
+
+        if vel then
+            pcall(function() hrp.AssemblyLinearVelocity = vel end)
+        end
+    end
+
+    local function OnChar(char)
+        baseRotation = nil
+        local hum = char:WaitForChild("Humanoid", 5)
+        if hum and Config.Enabled then
+            hum.AutoRotate = false
+        end
+        task.wait(0.1)
+        if Config.Enabled then
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if hrp then baseRotation = hrp.CFrame.Rotation end
+        end
+    end
+
+    function Config.Start()
+        if Conn then return end
+        local hum = GetHumanoid()
+        if hum then hum.AutoRotate = false end
+        local hrp = GetHRP()
+        if hrp then baseRotation = hrp.CFrame.Rotation end
+        elapsed, lastUpdate, jitterSign = 0, 0, 1
+        curYaw, curPitch = 0, 0
+        Conn = RunService.RenderStepped:Connect(Step)
+        CharConn = LP.CharacterAdded:Connect(OnChar)
+    end
+
+    function Config.Stop()
+        if Conn then Conn:Disconnect(); Conn = nil end
+        if CharConn then CharConn:Disconnect(); CharConn = nil end
+        local hum = GetHumanoid()
+        if hum then hum.AutoRotate = true end
+        baseRotation = nil
+    end
+
+    return Config
+end)()
+
 local Combat  = Window:Page({ Name = "combat" })
 local Visuals = Window:Page({ Name = "visuals" })
 local Misc    = Window:Page({ Name = "misc" })
@@ -997,6 +1171,11 @@ Aim:Toggle({
 Aim:Toggle({
     Name = "show fov circle", Flag = "sa_circle", Default = true,
     Callback = function(v) SilentAim.ShowCircle = v end,
+})
+
+Aim:Slider({
+    Name = "hit chance", Flag = "sa_hitchance", Min = 0, Max = 100, Default = 100, Decimals = 0,
+    Callback = function(v) SilentAim.HitChance = v end,
 })
 
 local Mods = Combat:Section({ Name = "combat mods", Side = 2 })
@@ -1202,7 +1381,97 @@ FOVSection:Slider({
     end,
 })
 
-local MCSection = Misc:Section({ Name = "model changer", Side = 2 })
+local aaToggleRef, spinToggleRef
+local SpinSection = Misc:Section({ Name = "spin bot", Side = 1 })
+
+local spinToggle = SpinSection:Toggle({
+    Name = "enabled", Flag = "spin_enabled", Default = false,
+    Callback = function(v)
+        SpinBot.Enabled = v
+        if v then
+            SpinBot.Start()
+            if AntiAim.Enabled then
+                AntiAim.Enabled = false
+                AntiAim.Stop()
+                if aaToggleRef and aaToggleRef.Set then
+                    pcall(function() aaToggleRef:Set(false) end)
+                end
+            end
+        else
+            SpinBot.Stop()
+        end
+    end,
+})
+spinToggleRef = spinToggle
+
+SpinSection:Slider({
+    Name = "speed", Flag = "spin_speed",
+    Min = 1, Max = 100, Default = 20, Decimals = 0,
+    Callback = function(v) SpinBot.Speed = v end,
+})
+
+SpinSection:Dropdown({
+    Name = "axis", Flag = "spin_axis",
+    Items = { "Y", "X", "Z", "Random" },
+    Default = "Y",
+    Callback = function(v) SpinBot.Axis = v end,
+})
+
+SpinSection:Toggle({
+    Name = "preserve velocity", Flag = "spin_preserve", Default = true,
+    Callback = function(v) SpinBot.Preserve = v end,
+})
+
+local AASection = Misc:Section({ Name = "anti aim", Side = 2 })
+
+local aaToggle = AASection:Toggle({
+    Name = "enabled", Flag = "aa_enabled", Default = false,
+    Callback = function(v)
+        AntiAim.Enabled = v
+        if v then
+            AntiAim.Start()
+            if SpinBot.Enabled then
+                SpinBot.Enabled = false
+                SpinBot.Stop()
+                if spinToggleRef and spinToggleRef.Set then
+                    pcall(function() spinToggleRef:Set(false) end)
+                end
+            end
+        else
+            AntiAim.Stop()
+        end
+    end,
+})
+aaToggleRef = aaToggle
+
+AASection:Dropdown({
+    Name = "mode", Flag = "aa_mode",
+    Items = { "Jitter", "Random", "Static", "Pitch", "Yaw+Pitch" },
+    Default = "Jitter",
+    Callback = function(v) AntiAim.Mode = v end,
+})
+
+AASection:Slider({
+    Name = "yaw", Flag = "aa_yaw", Min = 0, Max = 180, Default = 90, Decimals = 0,
+    Callback = function(v) AntiAim.Yaw = v end,
+})
+
+AASection:Slider({
+    Name = "pitch", Flag = "aa_pitch", Min = -90, Max = 90, Default = 0, Decimals = 0,
+    Callback = function(v) AntiAim.Pitch = v end,
+})
+
+AASection:Slider({
+    Name = "interval", Flag = "aa_interval", Min = 0.01, Max = 1, Default = 0.05, Decimals = 0.01,
+    Callback = function(v) AntiAim.Interval = v end,
+})
+
+AASection:Toggle({
+    Name = "preserve velocity", Flag = "aa_preserve", Default = true,
+    Callback = function(v) AntiAim.Preserve = v end,
+})
+
+local MCSection = Misc:Section({ Name = "model changer", Side = 3 })
 
 local mc_enabled = false
 
