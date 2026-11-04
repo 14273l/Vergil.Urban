@@ -529,17 +529,18 @@ local function SA_InstallHook()
                     return oldFire(self, ...)
                 end
                 local args = { ... }
+                local n = select("#", ...)
                 local tgt  = SA_Target()
                 if not tgt then
-                    return oldFire(self, table.unpack(args))
+                    return oldFire(self, table.unpack(args, 1, n))
                 end
                 if SilentAim.HitChance < 100 then
                     if math.random() * 100 > SilentAim.HitChance then
-                        return oldFire(self, table.unpack(args))
+                        return oldFire(self, table.unpack(args, 1, n))
                     end
                 end
                 SA_ProcessArgs(args, tgt)
-                return oldFire(self, table.unpack(args))
+                return oldFire(self, table.unpack(args, 1, n))
             end)
         end)
         if ok then SA_State.Hooked = true
@@ -624,7 +625,7 @@ local function CM_ApplyNoSpread(enabled)
     if enabled then
         CM.Config.Global.BloomScale = 0
     else
-        CM.Config.Global.BloomScale = CM_OriginalBloomScale or 1
+        CM.Config.Global.BloomScale = CM.OriginalBloomScale or 1
     end
 end
 
@@ -1550,11 +1551,20 @@ MCSection:Toggle({
     end,
 })
 
+_G.__mc_current = "Tung Tung Sahur"
+
 local mc_dropdown = MCSection:Dropdown({
     Name = "model", Flag = "mc_model",
     Items = ModelChanger.getModelNames(),
     Default = "Tung Tung Sahur",
-    Callback = function(v) ModelChanger.setModel(v) end,
+    Callback = function(v)
+        _G.__mc_current = v
+        ModelChanger.setModel(v)
+        local s = ModelChanger.getScale(v)
+        if mc_scale and mc_scale.Set then
+            pcall(function() mc_scale:Set(s) end)
+        end
+    end,
 })
 
 local mc_scale = MCSection:Slider({
@@ -1564,17 +1574,6 @@ local mc_scale = MCSection:Slider({
         ModelChanger.setScale(_G.__mc_current or "Tung Tung Sahur", v)
     end,
 })
-
-_G.__mc_current = "Tung Tung Sahur"
-if mc_dropdown and mc_dropdown.OnChanged then
-    mc_dropdown:OnChanged(function(v)
-        _G.__mc_current = v
-        local s = ModelChanger.getScale(v)
-        if mc_scale and mc_scale.Set then
-            pcall(function() mc_scale:Set(s) end)
-        end
-    end)
-end
 
 Window:InitWindow()
 print("[Vergil] init complete")
