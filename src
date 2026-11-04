@@ -18,6 +18,7 @@ local SA_Gui     = game:GetService("GuiService")
 local SA_LP      = SA_Players.LocalPlayer
 local SA_Camera  = workspace.CurrentCamera
 local SA_VIM     = game:GetService("VirtualInputManager")
+local InsertService = game:GetService("InsertService")
 
 local ModelChangerHooks = {
     chamsEnabled = false,
@@ -421,12 +422,15 @@ do
 end
 
 local SilentAim = {
-    Enabled     = false,
-    FOV         = 250,
-    TargetPart  = "Head",
-    VisibleOnly = true,
-    ShowCircle  = true,
-    HitChance   = 100,
+    Enabled      = false,
+    FOV          = 250,
+    TargetPart   = "Head",
+    VisibleOnly  = true,
+    ShowCircle   = true,
+    HitChance    = 100,
+    Prediction   = true,
+    BulletSpeed  = 1000,
+    MaxDistance  = 500,
 }
 
 local SA_State = { Fire = nil, Circle = nil, Hooked = false }
@@ -456,8 +460,11 @@ end
 
 local function SA_Target()
     local best, bestDist = nil, SilentAim.FOV
-    local center = SA_Camera.ViewportSize / 2
-    local camPos = SA_Camera.CFrame.Position
+    local center    = SA_Camera.ViewportSize / 2
+    local camPos     = SA_Camera.CFrame.Position
+    local maxWorldDist = SilentAim.MaxDistance and SilentAim.MaxDistance > 0
+        and SilentAim.MaxDistance or math.huge
+
     for _, player in SA_Players:GetPlayers() do
         if player == SA_LP then continue end
         local char = player.Character
@@ -466,32 +473,56 @@ local function SA_Target()
         if not hum or hum.Health <= 0 then continue end
         local part = char:FindFirstChild(SilentAim.TargetPart)
         if not part then continue end
+
+        local worldDist = (part.Position - camPos).Magnitude
+        if worldDist > maxWorldDist then continue end
+
         local sp, onScreen = SA_Camera:WorldToViewportPoint(part.Position)
         if not onScreen or sp.Z <= 0 then continue end
         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if d >= bestDist then continue end
         if SilentAim.VisibleOnly and not SA_Visible(camPos, part.Position) then continue end
+
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local vel = hrp and hrp.AssemblyLinearVelocity or Vector3.zero
+
         bestDist = d
-        best = { char = char, pos = part.Position, player = player }
+        best = {
+            char   = char,
+            pos    = part.Position,
+            player = player,
+            vel    = vel,
+        }
     end
     return best
 end
 
 local function SA_ProcessArgs(args, tgt)
     if not tgt then return end
+
+    local aimPos = tgt.pos
+    if SilentAim.Prediction and tgt.vel then
+        local origin = SA_Camera.CFrame.Position
+        if typeof(args[1]) == "Vector3" then origin = args[1] end
+        local distance     = (tgt.pos - origin).Magnitude
+        local bulletSpeed  = math.max(SilentAim.BulletSpeed or 1000, 1)
+        local travelTime   = distance / bulletSpeed
+        aimPos = tgt.pos + tgt.vel * travelTime
+    end
+
     if typeof(args[1]) == "Vector3" then
-        args[2] = (tgt.pos - args[1]).Unit
+        args[2] = (aimPos - args[1]).Unit
     end
     if typeof(args[11]) == "Vector3" and typeof(args[12]) == "Vector3" then
-        args[12] = (tgt.pos - args[11]).Unit
+        args[12] = (aimPos - args[11]).Unit
     end
     if typeof(args[13]) == "Vector3" then
-        args[13] = tgt.pos
+        args[13] = aimPos
     end
     if type(args[3]) ~= "string" then
         args[3] = tgt.char
         args[4] = SilentAim.TargetPart
-        args[5] = tgt.pos
+        args[5] = aimPos
     end
 end
 
@@ -561,9 +592,10 @@ task.spawn(function()
 end)
 
 local CombatMods = {
-    TriggerBot = false,
-    NoRecoil   = false,
-    NoSpread   = false,
+    TriggerBot    = false,
+    NoRecoil      = false,
+    NoSpread      = false,
+    InstantReload = false,
 }
 
 local CM = {
@@ -679,6 +711,36 @@ SA_Run.RenderStepped:Connect(function()
         return
     end
     CM_PressFire()
+end)
+
+SA_Run.RenderStepped:Connect(function()
+    if not CombatMods.InstantReload then return end
+    if not CM.ClientState then CM_Resolve() end
+    local cs = CM.ClientState
+    if cs then
+        cs.Reloading   = false
+        cs.ReloadStart = 0
+        cs.CanReload   = function() return true end
+    end
+
+    -- Keep reload state clear with a less obvious low ReloadTime
+    local tool = CM_GetEquippedTool()
+    if tool then
+        pcall(function() tool:SetAttribute("ReloadTime", 0.01) end)
+        local magSize = 30
+        pcall(function()
+            local m = tool:GetAttribute("MagSize")
+            if type(m) == "number" and m > 0 then magSize = m end
+        end)
+
+        local reloading = false
+        pcall(function() reloading = tool:GetAttribute("Reloading") == true end)
+        if reloading then
+            pcall(function() tool:SetAttribute("Reloading", false) end)
+        end
+
+        pcall(function() tool:SetAttribute("Ammo", magSize) end)
+    end
 end)
 
 SA_Gui.MenuOpened:Connect(CM_ReleaseFire)
@@ -1178,6 +1240,21 @@ Aim:Slider({
     Callback = function(v) SilentAim.HitChance = v end,
 })
 
+Aim:Toggle({
+    Name = "prediction", Flag = "sa_prediction", Default = true,
+    Callback = function(v) SilentAim.Prediction = v end,
+})
+
+Aim:Slider({
+    Name = "bullet speed", Flag = "sa_bulletspeed", Min = 100, Max = 5000, Default = 1000, Decimals = 0,
+    Callback = function(v) SilentAim.BulletSpeed = v end,
+})
+
+Aim:Slider({
+    Name = "max distance", Flag = "sa_maxdist", Min = 50, Max = 2000, Default = 500, Decimals = 0,
+    Callback = function(v) SilentAim.MaxDistance = v end,
+})
+
 local Mods = Combat:Section({ Name = "combat mods", Side = 2 })
 
 Mods:Toggle({
@@ -1203,6 +1280,41 @@ Mods:Toggle({
         CombatMods.NoSpread = v
         if v then CM_Resolve() end
         CM_ApplyNoSpread(v)
+    end,
+})
+
+Mods:Toggle({
+    Name = "instant reload", Flag = "cm_instant_reload", Default = false,
+    Callback = function(v)
+        CombatMods.InstantReload = v
+        local gtOk, gt = pcall(function()
+            return require(SA_RS:WaitForChild("Weapons"):WaitForChild("GunTuning"))
+        end)
+        if gtOk and gt then
+            pcall(function() gt.InstantReload(v) end)
+            pcall(function() gt.Apply() end)
+        end
+
+        -- Force the client's reload state to be cleared while enabled
+        if v then
+            if not CM.ClientState then CM_Resolve() end
+            local cs = CM.ClientState
+            if cs then
+                cs.Reloading   = false
+                cs.ReloadStart = 0
+                cs.CanReload   = function() return true end
+            end
+
+            -- Avoid setting obvious globals; rely on attribute cleanup only
+            print("[CM] Instant reload enabled")
+        else
+            if not CM.ClientState then CM_Resolve() end
+            local cs = CM.ClientState
+            if cs then
+                cs.CanReload = function() return true end
+            end
+            print("[CM] Instant reload disabled")
+        end
     end,
 })
 
@@ -1510,3 +1622,4 @@ if mc_dropdown and mc_dropdown.OnChanged then
 end
 
 Window:InitWindow()
+print("[Vergil] init complete")
