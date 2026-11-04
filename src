@@ -422,15 +422,12 @@ do
 end
 
 local SilentAim = {
-    Enabled      = false,
-    FOV          = 250,
-    TargetPart   = "Head",
-    VisibleOnly  = true,
-    ShowCircle   = true,
-    HitChance    = 100,
-    Prediction   = true,
-    BulletSpeed  = 1000,
-    MaxDistance  = 500,
+    Enabled     = false,
+    FOV         = 250,
+    TargetPart  = "Head",
+    VisibleOnly = true,
+    ShowCircle  = true,
+    HitChance   = 100,
 }
 
 local SA_State = { Fire = nil, Circle = nil, Hooked = false }
@@ -460,11 +457,8 @@ end
 
 local function SA_Target()
     local best, bestDist = nil, SilentAim.FOV
-    local center    = SA_Camera.ViewportSize / 2
-    local camPos     = SA_Camera.CFrame.Position
-    local maxWorldDist = SilentAim.MaxDistance and SilentAim.MaxDistance > 0
-        and SilentAim.MaxDistance or math.huge
-
+    local center = SA_Camera.ViewportSize / 2
+    local camPos = SA_Camera.CFrame.Position
     for _, player in SA_Players:GetPlayers() do
         if player == SA_LP then continue end
         local char = player.Character
@@ -473,56 +467,32 @@ local function SA_Target()
         if not hum or hum.Health <= 0 then continue end
         local part = char:FindFirstChild(SilentAim.TargetPart)
         if not part then continue end
-
-        local worldDist = (part.Position - camPos).Magnitude
-        if worldDist > maxWorldDist then continue end
-
         local sp, onScreen = SA_Camera:WorldToViewportPoint(part.Position)
         if not onScreen or sp.Z <= 0 then continue end
         local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
         if d >= bestDist then continue end
         if SilentAim.VisibleOnly and not SA_Visible(camPos, part.Position) then continue end
-
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        local vel = hrp and hrp.AssemblyLinearVelocity or Vector3.zero
-
         bestDist = d
-        best = {
-            char   = char,
-            pos    = part.Position,
-            player = player,
-            vel    = vel,
-        }
+        best = { char = char, pos = part.Position, player = player }
     end
     return best
 end
 
 local function SA_ProcessArgs(args, tgt)
     if not tgt then return end
-
-    local aimPos = tgt.pos
-    if SilentAim.Prediction and tgt.vel then
-        local origin = SA_Camera.CFrame.Position
-        if typeof(args[1]) == "Vector3" then origin = args[1] end
-        local distance     = (tgt.pos - origin).Magnitude
-        local bulletSpeed  = math.max(SilentAim.BulletSpeed or 1000, 1)
-        local travelTime   = distance / bulletSpeed
-        aimPos = tgt.pos + tgt.vel * travelTime
-    end
-
     if typeof(args[1]) == "Vector3" then
-        args[2] = (aimPos - args[1]).Unit
+        args[2] = (tgt.pos - args[1]).Unit
     end
     if typeof(args[11]) == "Vector3" and typeof(args[12]) == "Vector3" then
-        args[12] = (aimPos - args[11]).Unit
+        args[12] = (tgt.pos - args[11]).Unit
     end
     if typeof(args[13]) == "Vector3" then
-        args[13] = aimPos
+        args[13] = tgt.pos
     end
     if type(args[3]) ~= "string" then
         args[3] = tgt.char
         args[4] = SilentAim.TargetPart
-        args[5] = aimPos
+        args[5] = tgt.pos
     end
 end
 
@@ -1238,21 +1208,6 @@ Aim:Toggle({
 Aim:Slider({
     Name = "hit chance", Flag = "sa_hitchance", Min = 0, Max = 100, Default = 100, Decimals = 0,
     Callback = function(v) SilentAim.HitChance = v end,
-})
-
-Aim:Toggle({
-    Name = "prediction", Flag = "sa_prediction", Default = true,
-    Callback = function(v) SilentAim.Prediction = v end,
-})
-
-Aim:Slider({
-    Name = "bullet speed", Flag = "sa_bulletspeed", Min = 100, Max = 5000, Default = 1000, Decimals = 0,
-    Callback = function(v) SilentAim.BulletSpeed = v end,
-})
-
-Aim:Slider({
-    Name = "max distance", Flag = "sa_maxdist", Min = 50, Max = 2000, Default = 500, Decimals = 0,
-    Callback = function(v) SilentAim.MaxDistance = v end,
 })
 
 local Mods = Combat:Section({ Name = "combat mods", Side = 2 })
