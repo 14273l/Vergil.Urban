@@ -162,10 +162,13 @@ if isfunctionhooked(bencode) then
 end 
 
 
-local old; old = hookfunction(bencode, function(p15 --[[ anti cheat key ]], p16 --[[ anti cheat id ]], p17 --[[ detection counter ]], p18 --[[ detection table :money_mouth: ]])
-    p15 = AntiCheatKey 
-    p17 = 0
-    p18 = "" -- emptying detections boiii 
+local old; old = hookfunction(bencode, function(p15 --[[ anti cheat key ]], p16 --[[ anti cheat id ]], p17 --[[ detection counter ]], p18 --[[ detection table :money_mouth: ]])    
+    if p17 ~= 0 and p17 ~= 1 then 
+        p17 = 0
+        p18 = "" -- emptying detections boiii 
+    end
+    
+    print("Emulating... ", p15, p16, p17, p18)
 
     local buffer_create_ret = buffer.create(192);
     buffer.writeu32(buffer_create_ret, 0, p16);
