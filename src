@@ -1,13 +1,224 @@
-local report = filtergc("function", {Name = "report"}, true)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer 
+local ReplicatedStorage = game:GetService("ReplicatedStorage");
+local CollectionService = game:GetService("CollectionService");
+local Beat = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Beat");
+local HttpService = game:GetService("HttpService");
 
-if isfunctionhooked(report) then 
-    restorefunction(report)
+
+
+local function bmix(p1) -- Line: 20
+    local bit32_lshift_ret = bit32.lshift(p1, 13);
+    local bit32_bxor_ret = bit32.bxor(p1, bit32_lshift_ret);
+    local bit32_rshift_ret = bit32.rshift(bit32_bxor_ret, 17);
+    local bit32_bxor_ret2 = bit32.bxor(bit32_bxor_ret, bit32_rshift_ret);
+    local bit32_lshift_ret2 = bit32.lshift(bit32_bxor_ret2, 5);
+
+    return bit32.bxor(bit32_bxor_ret2, bit32_lshift_ret2);
+end;
+
+local function bkey(p2, p3) -- Line: 26
+    local bit32_bxor_ret = bit32.bxor(p2 % 4294967296, p3 % 4294967296, 1540483477);
+    local bit32_lshift_ret = bit32.lshift(bit32_bxor_ret, 13);
+    local bit32_bxor_ret2 = bit32.bxor(bit32_bxor_ret, bit32_lshift_ret);
+    local bit32_rshift_ret = bit32.rshift(bit32_bxor_ret2, 17);
+    local bit32_bxor_ret3 = bit32.bxor(bit32_bxor_ret2, bit32_rshift_ret);
+    local bit32_lshift_ret2 = bit32.lshift(bit32_bxor_ret3, 5);
+    local bit32_bxor_ret4 = bit32.bxor(bit32_bxor_ret3, bit32_lshift_ret2);
+    local v4 = bit32_bxor_ret4 == 0 and 625341585 or bit32_bxor_ret4;
+    local bit32_lshift_ret3 = bit32.lshift(v4, 13);
+    local bit32_bxor_ret5 = bit32.bxor(v4, bit32_lshift_ret3);
+    local bit32_rshift_ret2 = bit32.rshift(bit32_bxor_ret5, 17);
+    local bit32_bxor_ret6 = bit32.bxor(bit32_bxor_ret5, bit32_rshift_ret2);
+    local bit32_lshift_ret4 = bit32.lshift(bit32_bxor_ret6, 5);
+    local bit32_bxor_ret7 = bit32.bxor(bit32_bxor_ret6, bit32_lshift_ret4);
+    local v5 = bit32_bxor_ret7 == 0 and 625341585 or bit32_bxor_ret7;
+    local bit32_lshift_ret5 = bit32.lshift(v5, 13);
+    local bit32_bxor_ret8 = bit32.bxor(v5, bit32_lshift_ret5);
+    local bit32_rshift_ret3 = bit32.rshift(bit32_bxor_ret8, 17);
+    local bit32_bxor_ret9 = bit32.bxor(bit32_bxor_ret8, bit32_rshift_ret3);
+    local bit32_lshift_ret6 = bit32.lshift(bit32_bxor_ret9, 5);
+    local bit32_bxor_ret10 = bit32.bxor(bit32_bxor_ret9, bit32_lshift_ret6);
+    local v6 = bit32_bxor_ret10 == 0 and 625341585 or bit32_bxor_ret10;
+    local bit32_lshift_ret7 = bit32.lshift(v6, 13);
+    local bit32_bxor_ret11 = bit32.bxor(v6, bit32_lshift_ret7);
+    local bit32_rshift_ret4 = bit32.rshift(bit32_bxor_ret11, 17);
+    local bit32_bxor_ret12 = bit32.bxor(bit32_bxor_ret11, bit32_rshift_ret4);
+    local bit32_lshift_ret8 = bit32.lshift(bit32_bxor_ret12, 5);
+    local bit32_bxor_ret13 = bit32.bxor(bit32_bxor_ret12, bit32_lshift_ret8);
+
+    return bit32_bxor_ret13 == 0 and 625341585 or bit32_bxor_ret13;
+end;
+
+local function bstream(p7, p8) -- Line: 34
+    local bit32_bxor_ret = bit32.bxor(p7, p8 % 4294967296);
+    local bit32_lshift_ret = bit32.lshift(bit32_bxor_ret, 13);
+    local bit32_bxor_ret2 = bit32.bxor(bit32_bxor_ret, bit32_lshift_ret);
+    local bit32_rshift_ret = bit32.rshift(bit32_bxor_ret2, 17);
+    local bit32_bxor_ret3 = bit32.bxor(bit32_bxor_ret2, bit32_rshift_ret);
+    local bit32_lshift_ret2 = bit32.lshift(bit32_bxor_ret3, 5);
+    local bit32_bxor_ret4 = bit32.bxor(bit32_bxor_ret3, bit32_lshift_ret2);
+    local u9 = bit32_bxor_ret4 == 0 and 1831565813 or bit32_bxor_ret4;
+
+    return function() -- Line: 37
+        -- upvalues: u9 (ref)
+        local v10 = u9;
+        local bit32_lshift_ret3 = bit32.lshift(v10, 13);
+        local bit32_bxor_ret5 = bit32.bxor(v10, bit32_lshift_ret3);
+        local bit32_rshift_ret2 = bit32.rshift(bit32_bxor_ret5, 17);
+        local bit32_bxor_ret6 = bit32.bxor(bit32_bxor_ret5, bit32_rshift_ret2);
+        local bit32_lshift_ret4 = bit32.lshift(bit32_bxor_ret6, 5);
+        u9 = bit32.bxor(bit32_bxor_ret6, bit32_lshift_ret4);
+
+        return bit32.band(u9, 255);
+    end;
+end;
+
+local function bsum(p11, p12) -- Line: 42
+    for i = 0, 187 do
+        local v13 = buffer.readu8(p11, i) + i * 256;
+        local bit32_bxor_ret = bit32.bxor(p12, v13);
+        local bit32_lshift_ret = bit32.lshift(bit32_bxor_ret, 13);
+        local bit32_bxor_ret2 = bit32.bxor(bit32_bxor_ret, bit32_lshift_ret);
+        local bit32_rshift_ret = bit32.rshift(bit32_bxor_ret2, 17);
+        local bit32_bxor_ret3 = bit32.bxor(bit32_bxor_ret2, bit32_rshift_ret);
+        local bit32_lshift_ret2 = bit32.lshift(bit32_bxor_ret3, 5);
+        p12 = bit32.bxor(bit32_bxor_ret3, bit32_lshift_ret2);
+        local v14;
+
+        if p12 == 0 then
+            v14 = i;
+            p12 = 1;
+        else
+            v14 = i;
+        end;
+    end;
+
+    return p12;
+end;
+
+local Random_new_ret = Random.new();
+
+--[[local function bencode(p15, p16, p17, p18) -- Line: 51
+    -- upvalues: Random_new_ret (copy), bsum (copy)
+    local buffer_create_ret = buffer.create(192);
+    buffer.writeu32(buffer_create_ret, 0, p16);
+    buffer.writeu16(buffer_create_ret, 4, p17);
+    local math_min_ret = math.min(#p18, 181);
+    buffer.writeu8(buffer_create_ret, 6, math_min_ret);
+
+    if math_min_ret > 0 then
+        buffer.writestring(buffer_create_ret, 7, p18, math_min_ret);
+    end;
+
+    for i = math_min_ret + 7, 187 do
+        local v19 = Random_new_ret:NextInteger(0, 255);
+        buffer.writeu8(buffer_create_ret, i, v19);
+        local _ = i;
+    end;
+
+    local v20 = bsum(buffer_create_ret, p15);
+    buffer.writeu32(buffer_create_ret, 188, v20);
+    local bit32_bxor_ret = bit32.bxor(p15, p16 % 4294967296);
+    local bit32_lshift_ret = bit32.lshift(bit32_bxor_ret, 13);
+    local bit32_bxor_ret2 = bit32.bxor(bit32_bxor_ret, bit32_lshift_ret);
+    local bit32_rshift_ret = bit32.rshift(bit32_bxor_ret2, 17);
+    local bit32_bxor_ret3 = bit32.bxor(bit32_bxor_ret2, bit32_rshift_ret);
+    local bit32_lshift_ret2 = bit32.lshift(bit32_bxor_ret3, 5);
+    local bit32_bxor_ret4 = bit32.bxor(bit32_bxor_ret3, bit32_lshift_ret2);
+    local u21 = bit32_bxor_ret4 == 0 and 1831565813 or bit32_bxor_ret4;
+
+    local function v23() -- Line: 37
+        -- upvalues: u21 (ref)
+        local v22 = u21;
+        local bit32_lshift_ret3 = bit32.lshift(v22, 13);
+        local bit32_bxor_ret5 = bit32.bxor(v22, bit32_lshift_ret3);
+        local bit32_rshift_ret2 = bit32.rshift(bit32_bxor_ret5, 17);
+        local bit32_bxor_ret6 = bit32.bxor(bit32_bxor_ret5, bit32_rshift_ret2);
+        local bit32_lshift_ret4 = bit32.lshift(bit32_bxor_ret6, 5);
+        u21 = bit32.bxor(bit32_bxor_ret6, bit32_lshift_ret4);
+
+        return bit32.band(u21, 255);
+    end;
+
+    for i = 4, 191 do
+        local buffer_readu8_ret = buffer.readu8(buffer_create_ret, i);
+        local bit32_bxor_ret5 = bit32.bxor(buffer_readu8_ret, v23());
+        buffer.writeu8(buffer_create_ret, i, bit32_bxor_ret5);
+        local _ = i;
+    end;
+
+    return buffer_create_ret;
+end;]]
+
+local LightingRev = workspace:GetAttribute("LightingRev")
+local AntiCheatKey = bkey(LocalPlayer.UserId, LightingRev)
+local HeartbeatId = nil 
+
+local bencode = filtergc("function", {Name = "bencode"}, true)
+
+if isfunctionhooked(bencode) then 
+    restorefunction(bencode)
 end 
 
-local old; old = hookfunction(report, function(p105, p106, p107)
-    return 
+
+local old; old = hookfunction(bencode, function(p15 --[[ anti cheat key ]], p16 --[[ anti cheat id ]], p17 --[[ detection counter ]], p18 --[[ detection table :money_mouth: ]])
+    p15 = AntiCheatKey 
+    p17 = 0
+    p18 = "" -- emptying detections boiii 
+
+    local buffer_create_ret = buffer.create(192);
+    buffer.writeu32(buffer_create_ret, 0, p16);
+    buffer.writeu16(buffer_create_ret, 4, p17);
+    local math_min_ret = math.min(#p18, 181);
+    buffer.writeu8(buffer_create_ret, 6, math_min_ret);
+
+    if math_min_ret > 0 then
+        buffer.writestring(buffer_create_ret, 7, p18, math_min_ret);
+    end;
+
+    for i = math_min_ret + 7, 187 do
+        local v19 = Random_new_ret:NextInteger(0, 255);
+        buffer.writeu8(buffer_create_ret, i, v19);
+        local _ = i;
+    end;
+
+    local v20 = bsum(buffer_create_ret, p15);
+    buffer.writeu32(buffer_create_ret, 188, v20);
+    local bit32_bxor_ret = bit32.bxor(p15, p16 % 4294967296);
+    local bit32_lshift_ret = bit32.lshift(bit32_bxor_ret, 13);
+    local bit32_bxor_ret2 = bit32.bxor(bit32_bxor_ret, bit32_lshift_ret);
+    local bit32_rshift_ret = bit32.rshift(bit32_bxor_ret2, 17);
+    local bit32_bxor_ret3 = bit32.bxor(bit32_bxor_ret2, bit32_rshift_ret);
+    local bit32_lshift_ret2 = bit32.lshift(bit32_bxor_ret3, 5);
+    local bit32_bxor_ret4 = bit32.bxor(bit32_bxor_ret3, bit32_lshift_ret2);
+    local u21 = bit32_bxor_ret4 == 0 and 1831565813 or bit32_bxor_ret4;
+
+    local function v23() -- Line: 37
+        -- upvalues: u21 (ref)
+        local v22 = u21;
+        local bit32_lshift_ret3 = bit32.lshift(v22, 13);
+        local bit32_bxor_ret5 = bit32.bxor(v22, bit32_lshift_ret3);
+        local bit32_rshift_ret2 = bit32.rshift(bit32_bxor_ret5, 17);
+        local bit32_bxor_ret6 = bit32.bxor(bit32_bxor_ret5, bit32_rshift_ret2);
+        local bit32_lshift_ret4 = bit32.lshift(bit32_bxor_ret6, 5);
+        u21 = bit32.bxor(bit32_bxor_ret6, bit32_lshift_ret4);
+
+        return bit32.band(u21, 255);
+    end;
+
+    for i = 4, 191 do
+        local buffer_readu8_ret = buffer.readu8(buffer_create_ret, i);
+        local bit32_bxor_ret5 = bit32.bxor(buffer_readu8_ret, v23());
+        buffer.writeu8(buffer_create_ret, i, bit32_bxor_ret5);
+        local _ = i;
+    end;
+
+    return buffer_create_ret;
 end)
+
 --bypass above
+
 local ALLOWED_ID = 84448037861644
 if game.PlaceId ~= ALLOWED_ID and game.GameId ~= ALLOWED_ID then
     warn(string.format("[Vergil ReBorn] Blocked: PlaceId=%s GameId=%s", tostring(game.PlaceId), tostring(game.GameId)))
