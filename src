@@ -1,3 +1,13 @@
+local report = filtergc("function", {Name = "report"}, true)
+
+if isfunctionhooked(report) then 
+    restorefunction(report)
+end 
+
+local old; old = hookfunction(report, function(p105, p106, p107)
+    return 
+end)
+--bypass above
 local ALLOWED_ID = 84448037861644
 if game.PlaceId ~= ALLOWED_ID and game.GameId ~= ALLOWED_ID then
     warn(string.format("[Vergil ReBorn] Blocked: PlaceId=%s GameId=%s", tostring(game.PlaceId), tostring(game.GameId)))
